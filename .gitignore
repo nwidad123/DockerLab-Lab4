@@ -1,0 +1,23 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Local database storage
+/db_data/
+
+# Backup copies
+/*_backup.*
+/*_before_*.*
+/docker-compose.before-init.yml
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Editor and operating-system files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

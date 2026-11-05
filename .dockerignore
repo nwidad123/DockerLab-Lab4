@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+db_data
+**/*_backup.*
+**/*_before_*.*
+docker-compose.before-init.yml
+**/*.log
+**/*.tmp
+**/*.bak
+.vscode
+.idea
