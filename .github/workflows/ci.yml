@@ -43,3 +43,85 @@ jobs:
       - name: Remove test container
         if: always()
         run: docker rm --force lab_php || true
+
+  database-checks:
+    name: Check fresh database initialization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    env:
+      MYSQL_ROOT_PASSWORD: ci_only_root_password
+      MYSQL_DATABASE: lab4_ci
+      DB_USER: lab4_ci_user
+      DB_PASSWORD: ci_only_database_password
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Validate test Compose configuration
+        run: docker compose -p lab4-ci -f compose.init-test.yml config --quiet
+
+      - name: Initialize fresh database
+        run: |
+          docker compose -p lab4-ci -f compose.init-test.yml \
+            up -d --wait --wait-timeout 180
+
+      - name: Check tables and account defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          query() {
+            docker compose -p lab4-ci -f compose.init-test.yml \
+              exec -T database-test sh -c \
+              'MYSQL_PWD="$MYSQL_PASSWORD" mysql \
+                --protocol=TCP -h 127.0.0.1 \
+                -u "$MYSQL_USER" -D "$MYSQL_DATABASE" \
+                --batch --skip-column-names -e "$1"' sh "$1"
+          }
+
+          query "SELECT userID, FirstName, LastName, Email, Password,
+            Status, RegDatetime, LoginDatetime, LogoutDatetime,
+            EmailVerified, EmailVerificationToken, TwoFactorPin,
+            TwoFactorCreatedAt, TotpSecret, Role, AdminRequestStatus
+            FROM users LIMIT 0;"
+          echo "PASS: All required user columns exist."
+
+          query "SELECT userID, TokenHash, ExpiresAt
+            FROM password_reset_tokens LIMIT 0;"
+          echo "PASS: Password-reset table and columns exist."
+
+          user_count="$(query 'SELECT COUNT(*) FROM users;')"
+          test "$user_count" = "0"
+          echo "PASS: Fresh database contains no users."
+
+          reset_count="$(query 'SELECT COUNT(*) FROM password_reset_tokens;')"
+          test "$reset_count" = "0"
+          echo "PASS: Fresh database contains no reset tokens."
+
+          role_default="$(query "SELECT COLUMN_DEFAULT
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME = 'Role';")"
+          test "$role_default" = "user"
+          echo "PASS: New accounts default to the user role."
+
+          application_default="$(query "SELECT COLUMN_DEFAULT
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME = 'AdminRequestStatus';")"
+          test "$application_default" = "none"
+          echo "PASS: New accounts default to no admin application."
+
+      - name: Show database logs on failure
+        if: failure()
+        run: docker compose -p lab4-ci -f compose.init-test.yml logs
+
+      - name: Remove test database
+        if: always()
+        run: docker compose -p lab4-ci -f compose.init-test.yml down --volumes
