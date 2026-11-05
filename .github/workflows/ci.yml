@@ -1,0 +1,45 @@
+name: Lab 4 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-checks:
+    name: Build and check PHP
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build PHP image
+        run: docker build --tag lab4-php:ci .
+
+      - name: Start PHP container
+        run: |
+          docker run --detach \
+            --name lab_php \
+            --volume "$GITHUB_WORKSPACE/www:/usr/share/nginx/html:ro" \
+            lab4-php:ci
+
+      - name: Check every PHP file
+        shell: pwsh
+        run: ./scripts/Test-Php.ps1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs lab_php || true
+
+      - name: Remove test container
+        if: always()
+        run: docker rm --force lab_php || true
